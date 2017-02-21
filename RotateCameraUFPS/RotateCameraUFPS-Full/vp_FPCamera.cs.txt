@@ -1,0 +1,8 @@
+// include this function in vp_FPCamera.cs of UFPS scripts
+
+
+// pass a vector3 object which is an output of lerp logic across time for smooth transtion
+public void rotateCamera(Vector3 transform){
+		Debug.Log ("roatating camera");
+		Player.Rotation.Set (transform);
+	}

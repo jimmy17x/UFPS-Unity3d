@@ -1,0 +1,121 @@
+void DoHit()
+	{
+
+		Ray ray = new Ray(m_Transform.position, m_Transform.forward);
+		RaycastHit hit;
+
+		// if this bullet was fired by the local player, don't allow it to hit the local player
+		if ((m_Source != null) && (m_Source.gameObject.layer == vp_Layer.LocalPlayer))
+			LayerMask = vp_Layer.Mask.BulletBlockers;
+
+		// raycast against all big, solid objects except the player itself
+		// SNIPPET: using this instead may be useful in cases where bullets
+		// fail to hit colliders (however likely at a performance cost)
+		//if (Physics.Linecast(m_Transform.position, m_Transform.position + (m_Transform.forward * Range), out hit, LayerMask))
+		if (Physics.Raycast(ray, out hit, Range, LayerMask))
+		{
+
+
+			// NOTE: we can't bail out of this if-statement based on !collider.isTrigger,
+			// because that would make bullets _disappear_ if they hit a trigger. to make a
+			// trigger not interfere with bullets, put it in the layer: 'vp_Layer.Trigger'
+			// (default: 27)
+
+			// move this gameobject instance to the hit object
+			Vector3 scale = m_Transform.localScale;	// save scale to handle scaled parent objects
+			m_Transform.parent = hit.transform;
+			m_Transform.localPosition = hit.transform.InverseTransformPoint(hit.point);
+			m_Transform.rotation = Quaternion.LookRotation(hit.normal);					// face away from hit surface
+			if (hit.transform.lossyScale == Vector3.one)								// if hit object has normal scale
+				m_Transform.Rotate(Vector3.forward, Random.Range(0, 360), Space.Self);	// spin randomly
+			else
+			{
+				// rotated child objects will get skewed if the parent object has been
+				// unevenly scaled in the editor, so on scaled objects we don't support
+				// spin, and we need to unparent, rescale and reparent the decal.
+				m_Transform.parent = null;
+				m_Transform.localScale = scale;
+				m_Transform.parent = hit.transform;
+			}
+			
+			// if hit object has physics, add the bullet force to it
+			Rigidbody body = hit.collider.attachedRigidbody;
+			if (body != null && !body.isKinematic)
+				body.AddForceAtPosition(((ray.direction * Force) / Time.timeScale) / vp_TimeUtility.AdjustedTimeScale, hit.point);
+
+
+
+			//on hitting bullet with firebox _ADJUSTED_
+			if(hit.collider.gameObject.tag == Tags.FIREBOX_TAG )
+			{
+				//invoke damage function in firebox object with parameter as wrapper object having position of bullet hit
+				hit.collider.SendMessage(RayCastHitMessageFunctionName.PISTOL_HIT ,  new WrapperObjectPosition(m_Transform.position , m_Transform.rotation));
+			}else
+			{
+				//spawn  particles invoking generic damage function same like above case
+			}
+
+
+			// spawn impact effect
+			if (m_ImpactPrefab != null){
+				vp_Utility.Instantiate(m_ImpactPrefab, m_Transform.position, m_Transform.rotation);
+			}
+
+
+
+			// spawn dust effect
+			if (m_DustPrefab != null)
+				vp_Utility.Instantiate(m_DustPrefab, m_Transform.position, m_Transform.rotation);
+
+			// spawn spark effect
+			if (m_SparkPrefab != null)
+			{
+				if (Random.value < m_SparkFactor)
+					vp_Utility.Instantiate(m_SparkPrefab, m_Transform.position, m_Transform.rotation);
+			}
+
+			// spawn debris particle fx
+			if (m_DebrisPrefab != null)
+				vp_Utility.Instantiate(m_DebrisPrefab, m_Transform.position, m_Transform.rotation);
+
+			// play impact sound
+			if (m_ImpactSounds.Count > 0)
+			{
+				m_Audio.pitch = Random.Range(SoundImpactPitch.x, SoundImpactPitch.y) * Time.timeScale;
+				m_Audio.clip = m_ImpactSounds[(int)Random.Range(0, (m_ImpactSounds.Count))];
+				m_Audio.Stop();
+				m_Audio.Play();
+			}
+
+			// do damage on the target
+			if(m_Source != null)
+				hit.collider.SendMessageUpwards(DamageMethodName, new vp_DamageInfo(Damage, m_Source, vp_DamageInfo.DamageType.Bullet), SendMessageOptions.DontRequireReceiver);
+			else
+				hit.collider.SendMessageUpwards(DamageMethodName, Damage, SendMessageOptions.DontRequireReceiver);
+
+			// prevent adding decals to objects based on layer
+			if ((m_Renderer != null) && NoDecalOnTheseLayers.Length > 0)
+			{
+				foreach (int layer in NoDecalOnTheseLayers)
+				{
+
+					if (hit.transform.gameObject.layer != layer)
+						continue;
+					m_Renderer.enabled = false;
+					TryDestroy();
+					return;
+
+				}
+			}
+
+			// if bullet is visible (i.e. has a decal), queue it for deletion later
+			if(m_Renderer != null)
+				vp_DecalManager.Add(gameObject);
+			else
+				vp_Timer.In(1, TryDestroy);		// we have no renderer, so destroy object in 1 sec
+
+		}
+		else
+			vp_Utility.Destroy(gameObject);	// hit nothing, so self destruct immediately
+
+	}
